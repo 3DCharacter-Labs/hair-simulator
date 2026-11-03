@@ -6,7 +6,7 @@ import {
 } from "three";
 
 const loader = new TextureLoader();
-const blade = loader.load("./blade.jpg");
+const blade = loader.load(`${import.meta.env.BASE_URL}blade.jpg`);
 
 const vertexShader = `precision highp float;
 

@@ -6,7 +6,7 @@ import { useControls, button, folder } from 'leva';
 import SurfaceMesh from "./SurfaceMesh";
 
 export default function Experience() {
-    const { scene } = useGLTF('/model3.glb');
+    const { scene } = useGLTF(`${import.meta.env.BASE_URL}model3.glb`);
     const [points, setPoints] = useState([]);
     const [lineSegments, setLineSegments] = useState([]); // Store each segment separately
     const [isClosed, setIsClosed] = useState(false);
