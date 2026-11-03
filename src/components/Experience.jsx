@@ -16,12 +16,13 @@ export default function Experience() {
     // Always points at the latest resetDrawing so the Leva button / keyboard
     // handler never call a stale closure.
     const resetDrawingRef = useRef(() => {});
+    // Synchronous mirrors of points / normals / isClosed for the click handler.
+    const pointsRef = useRef([]);
+    const normalsRef = useRef([]);
+    const isClosedRef = useRef(false);
     
     // Threshold distance to close the shape
     const CLOSE_THRESHOLD = 0.05;
-    
-    // Store normals at each point to help with surface conforming
-    const [normals, setNormals] = useState([]);
     
     // Density of points along the drawn lines (smaller = more dense)
     const LINE_SEGMENT_LENGTH = 0.05;
@@ -67,75 +68,62 @@ export default function Experience() {
         return points;
     };
     
-    // Raycaster setup for detecting clicks on the model
+    // Raycaster setup for detecting clicks on the model.
+    // Reads and updates the refs synchronously so that rapid clicks (several
+    // before React re-renders) always see the latest points and normals.
     const handleClick = (event) => {
         event.stopPropagation();
-        
-        // Get intersection point on the model
+        if (isClosedRef.current) return;
+
         const intersection = event.intersections[0];
-        if (intersection && intersection.point) {
-            // If we have points and clicked near the first point, close the shape
-            if (points.length > 2 && !isClosed) {
-                const firstPoint = points[0];
-                const clickPoint = intersection.point;
-                const distance = firstPoint.distanceTo(clickPoint);
-                
-                if (distance < CLOSE_THRESHOLD) {
-                    // Use the first point exactly for closing to ensure perfect closure
-                    const headObject = scene.clone();
-                    headObject.scale.set(20, 20, 20);
-                    headObject.position.set(0, -30, 0);
-                    
-                    const lastPoint = points[points.length - 1];
-                    const lastNormal = normals[normals.length - 1];
-                    const firstNormal = normals[0];
-                    
-                    // Create dense points for closing the shape
-                    const closingPoints = createDenseLinePoints(
-                        lastPoint, firstPoint, lastNormal, firstNormal, headObject
-                    );
-                    
-                    // Add the closing segment
-                    setLineSegments(prevSegments => [...prevSegments, closingPoints]);
-                    setIsClosed(true);
-                    
-                    // Calculate approximate area
-                    return;
-                }
-            }
-            
-            // Otherwise add the new point to our points array
-            if (!isClosed) {
-                const newPoint = intersection.point;
-                const newNormal = intersection.face.normal.clone();
-                
-                setPoints(prevPoints => {
-                    const newPoints = [...prevPoints, newPoint];
-                    
-                    // If we have at least two points, create dense points between them
-                    if (newPoints.length >= 2) {
-                        const headObject = scene.clone();
-                        headObject.scale.set(20, 20, 20);
-                        headObject.position.set(0, -30, 0);
-                        
-                        const prevPoint = prevPoints[prevPoints.length - 1];
-                        const prevNormal = normals[normals.length - 1];
-                        
-                        const linePoints = createDenseLinePoints(
-                            prevPoint, newPoint, prevNormal, newNormal, headObject
-                        );
-                        
-                        // Store each segment separately
-                        setLineSegments(prevSegments => [...prevSegments, linePoints]);
-                    }
-                    
-                    return newPoints;
-                });
-                
-                // Store the face normal
-                setNormals(prevNormals => [...prevNormals, newNormal]);
+        if (!intersection || !intersection.point || !intersection.face) return;
+
+        const currentPoints = pointsRef.current;
+        const currentNormals = normalsRef.current;
+
+        const makeHeadObject = () => {
+            const headObject = scene.clone();
+            headObject.scale.set(20, 20, 20);
+            headObject.position.set(0, -30, 0);
+            return headObject;
+        };
+
+        // If we have points and clicked near the first point, close the shape
+        if (currentPoints.length > 2) {
+            const firstPoint = currentPoints[0];
+            if (firstPoint.distanceTo(intersection.point) < CLOSE_THRESHOLD) {
+                const closingPoints = createDenseLinePoints(
+                    currentPoints[currentPoints.length - 1],
+                    firstPoint,
+                    currentNormals[currentNormals.length - 1],
+                    currentNormals[0],
+                    makeHeadObject()
+                );
+                isClosedRef.current = true;
+                setLineSegments(prevSegments => [...prevSegments, closingPoints]);
+                setIsClosed(true);
+                return;
             }
         }
+
+        // Otherwise add the new point
+        const newPoint = intersection.point.clone();
+        const newNormal = intersection.face.normal.clone();
+
+        if (currentPoints.length >= 1) {
+            const linePoints = createDenseLinePoints(
+                currentPoints[currentPoints.length - 1],
+                newPoint,
+                currentNormals[currentNormals.length - 1],
+                newNormal,
+                makeHeadObject()
+            );
+            setLineSegments(prevSegments => [...prevSegments, linePoints]);
+        }
+
+        pointsRef.current = [...currentPoints, newPoint];
+        normalsRef.current = [...currentNormals, newNormal];
+        setPoints(pointsRef.current);
     };
     
     // Calculate stats for the shape
@@ -229,9 +217,11 @@ export default function Experience() {
 
     // Reset drawing: clears the drawing AND the generated hair/surface.
     const resetDrawing = () => {
+        pointsRef.current = [];
+        normalsRef.current = [];
+        isClosedRef.current = false;
         setPoints([]);
         setLineSegments([]);
-        setNormals([]);
         setIsClosed(false);
         setSurfaceData(null);
         setControls({ hair: false });
